@@ -21,6 +21,7 @@ import (
 	"github.com/nicholasjackson/fake-service/logging"
 	"github.com/nicholasjackson/fake-service/timing"
 	"github.com/nicholasjackson/fake-service/tracing"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	cors "github.com/gorilla/handlers"
 
@@ -80,6 +81,7 @@ var datadogTracingEndpointPort = env.String("TRACING_DATADOG_PORT", false, "8126
 var datadogMetricsEndpointHost = env.String("METRICS_DATADOG_HOST", false, "", "Hostname or IP for Datadog metrics collector")
 var datadogMetricsEndpointPort = env.String("METRICS_DATADOG_PORT", false, "8125", "Port for Datadog metrics collector")
 var datadogMetricsEnvironment  = env.String("METRICS_DATADOG_ENVIRONMENT", false, "production", "Environment tag for Datadog metrics collector")
+var enablePrometheusMetrics  = env.Bool("METRICS_ENABLE_PROMETHEUS", false, false, "Enable or disable exposing metrics to Prometheus")
 var logFormat = env.String("LOG_FORMAT", false, "text", "Log file format. [text|json]")
 var logLevel = env.String("LOG_LEVEL", false, "info", "Log level for output. [info|debug|trace|warn|error]")
 var logOutput = env.String("LOG_OUTPUT", false, "stdout", "Location to write log output, default is stdout, e.g. /var/log/web.log")
@@ -113,6 +115,10 @@ func main() {
 	if *datadogMetricsEndpointHost != "" {
 		hostname := fmt.Sprintf("%s:%s", *datadogMetricsEndpointHost, *datadogMetricsEndpointPort)
 		metrics = logging.NewStatsDMetrics(*name, *datadogMetricsEnvironment, hostname)
+	}
+
+	if *enablePrometheusMetrics {
+		metrics = logging.NewPrometheusMetrics()
 	}
 
 	lo := hclog.DefaultOptions
@@ -224,6 +230,12 @@ func main() {
 
 		// Add the generic health handler
 		mux.HandleFunc("/health", hq.Handle)
+
+		if *enablePrometheusMetrics {
+			mux.HandleFunc("/metrics", func(writer http.ResponseWriter, request *http.Request) {
+				promhttp.Handler().ServeHTTP(writer, request)
+			})
+		}
 
 		// uncomment to enable pprof
 		//mux.HandleFunc("/debug/pprof/", pprof.Index)
